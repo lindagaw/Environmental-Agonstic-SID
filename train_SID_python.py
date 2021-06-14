@@ -18,11 +18,11 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 
 #from mlxtend.feature_selection import SequentialFeatureSelector as sfs
 
-path_caregiver = '..//speaker_id_module//SpeakerID//singles//1-caregiver//'
-dest_caregiver = '..//app//2-Training//singles//1-caregiver//'
+path_caregiver = '1-Recording//singles//1-caregiver//'
+dest_caregiver = '2-Training//singles//1-caregiver//'
 
-path_patient = '..//speaker_id_module//SpeakerID//singles//2-patient//'
-dest_patient = '..//app//2-Training//singles//2-patient//'
+path_patient = '1-Recording//singles//2-patient//'
+dest_patient = '2-Training//singles//2-patient//'
 
 try:
     shutil.rmtree(dest_caregiver)
@@ -39,7 +39,7 @@ os.makedirs(dest_patient)
 def slice_audios(path, dest):
     for old_audio in os.listdir(dest):
         os.remove(dest + old_audio)
-        
+
     for audio_index in range(0, len(os.listdir(path))):
         target_audio_path =  path + os.listdir(path)[audio_index]
         print('input audio: ' + target_audio_path)
@@ -64,7 +64,7 @@ def slice_audios(path, dest):
             new_audio.export(new_audio_path, format="wav")
 
 def change_amplitude(emotionfile, d1, newSoundFile, d2):
-    
+
     if d1 <= d2:
         sound = AudioSegment.from_file(emotionfile) - np.random.randint(0, (6 * d2/d1 - 1))
         sound.export(newSoundFile, format='wav')  ### save the new generated file in a folder
@@ -99,19 +99,19 @@ def add_noise_and_deamplify_per_folder(directory, extension, noise_directory):
                 print(newSoundFile)
 
 def add_noise_per_file(emotionfile, bgnoise, newSoundFile):
-    
+
     emotionsound = AudioSegment.from_wav(emotionfile)
     emotion_duration = emotionsound.duration_seconds * 1000
     noise = AudioSegment.from_wav(bgnoise)
     noise_duration = noise.duration_seconds * 1000
-    
+
     threshold = noise_duration - emotion_duration
-    
+
     if threshold > 0:
         overlay_start = np.random.randint(0, threshold)
     else:
         overlay_start = 0
-        
+
     targeted_chunk = noise[overlay_start:overlay_start + emotion_duration]
     newSound = emotionsound.overlay(targeted_chunk, position=0)
     newSound=newSound[0:5000]
@@ -132,28 +132,6 @@ def extract_features_for_all_wavs(dest, label):
     print(labels.shape)
 
     return result, labels
-
-
-def load_emp_miu(y):
-    path = '..//models//emp_miu_class_' + str(y) + '.npy'
-    return np.load(path)
-
-def load_inv_emp_covar():
-    path = '..//models//inv_emp_sigma.npy'
-    return np.load(path)
-
-def load_mahalanobis_mean(y):
-    
-    path = '..//models//mahalanobis_mean_class_' + str(y) + '.npy'
-    return np.load(path)
-
-def load_mahalanobis_std(y):
-    path = '..//models//mahalanobis_std_class_' + str(y) + '.npy'
-    return np.load(path)
-
-def load_mahalanobis_coeff(y):
-    path = '..//models//mahalanobis_threshold_class_' + str(y) + '.npy'
-    return np.load(path)
 
 import tensorflow as tf
 import tensorflow.keras as keras
@@ -203,9 +181,10 @@ def train_cnn(X_train, y_train, X_test, y_test, X_val, y_val):
     for i in range(0, 1):
         model.add(Dense(256, activation="relu"))
         model.add(Dropout(0.2))
-    model.add(Dense(2, activation="softmax"))
+
+    model.add(Dense(len(os.listdir('1-Recording//singles//')), activation="softmax"))
     model.compile(loss=['categorical_crossentropy'], optimizer=adam, metrics=['accuracy', mil_squared_error])
-    
+
     print("Fit model on training data")
     history = model.fit(
         X_train,
@@ -225,125 +204,13 @@ def train_cnn(X_train, y_train, X_test, y_test, X_val, y_val):
 
     return model
 
-def get_emp_miu(X, y, intermediate_layer_model):
-    outputs = intermediate_layer_model.predict(X)
-    norms = [np.linalg.norm(output) for output in outputs]
-    emp_miu = np.mean(norms)
-    
-    path = '..//models//emp_miu_class_' + str(y) + '.npy'
-    print('emp_miu_class_' + str(y) + ' = ' + str(emp_miu))
-    np.save(path, emp_miu)
-    return emp_miu
-
-
-def get_emp_sigma(emp_miu_0, emp_miu_1, X_0, X_1, intermediate_layer_model):
-
-    X_0 = intermediate_layer_model.predict(X_0)
-    X_1 = intermediate_layer_model.predict(X_1)
-
-    X_0_norms = [np.linalg.norm(x) for x in X_0]
-    X_1_norms = [np.linalg.norm(x) for x in X_1]
-
-    class_0 = [ (x-emp_miu_0) * (x-emp_miu_0) for x in X_0_norms] # should be transpose if not just a num
-    class_1 = [ (x-emp_miu_1) * (x-emp_miu_1) for x in X_1_norms]
-    emp_sigma = np.sum(class_0 + class_1)/(len(class_0) + len(class_1))
-    
-    '''
-    class_0 = [ (x-emp_miu_0) @ np.transpose(x-emp_miu_0) for x in intermediate_layer_model.predict(X_0) ]
-    class_1 = [ (x-emp_miu_1) @ np.transpose(x-emp_miu_1) for x in intermediate_layer_model.predict(X_1) ]
-
-    emp_sigma = (class_0 + class_1)/(len(class_0) + len(class_1))
-    '''
-
-    print('the emprical covar matrix is ' + str(emp_sigma.shape))
-
-    path = '..//models//inv_emp_sigma.npy'
-
-    try:
-        result = np.linalg.pinv(emp_sigma)
-    except:
-        result = emp_sigma
-
-    np.save(path, result)
-    return emp_sigma
-
-
-
-
-def get_emp_mahalanobis(X, y, intermediate_layer_model, emp_sigma):
-    mahalanobis_coeff = 0
-
-    emp_miu = np.load('..//models//emp_miu_class_' + str(y) + '.npy')
-    inv_emp_sigma = np.load('..//models//inv_emp_sigma.npy')
-
-    try:
-        mahalanobis_dists = [np.transpose(x-emp_miu) @ inv_emp_sigma @ (x-emp_miu) for x in intermediate_layer_model.predict(X)]
-    except:
-        mahalanobis_dists = [(x-emp_miu) * inv_emp_sigma * (x-emp_miu) for x in intermediate_layer_model.predict(X)]
-
-    mahalanobis_mean = np.mean(mahalanobis_dists)
-    mahalanobis_std = np.std(mahalanobis_dists)
-
-    print('mahalanobis mean for class ' + str(y) + ' is ' + str(mahalanobis_mean))
-    print('mahalanobis std for class ' + str(y) + ' is ' + str(mahalanobis_std))
-
-    np.save('..//models//mahalanobis_mean_class_' + str(y) + '.npy', mahalanobis_mean)
-    np.save('..//models//mahalanobis_std_class_' + str(y) + '.npy', mahalanobis_std)
-
-    # np.linspace(0, 200, 2000, endpoint=False)
-    for coeff in np.linspace(0, 200, 20000, endpoint=False):
-        upper = mahalanobis_mean + coeff*mahalanobis_std
-        lower = mahalanobis_mean - coeff*mahalanobis_std
-        
-        valid_xs = []
-        for x in intermediate_layer_model.predict(X):
-            norm = np.linalg.norm(x)
-            
-            if norm > lower and norm < upper:
-                valid_xs.append(x)
-
-        if len(valid_xs)/len(X) > 0.65:
-            print(len(valid_xs)/len(X))
-            mahalanobis_coeff = coeff
-            np.save('..//models//mahalanobis_threshold_coefficient_class_' + str(y) + '.npy', coeff)
-            print('the mahalanobis threshold coefficient for class ' + str(y) + ' is ' + str(coeff))
-            break
-
-    return mahalanobis_mean, mahalanobis_std, mahalanobis_coeff
-
-
-def detect_ood(x, predicted_y):
-    
-    assert(predicted_y == '0' or predicted_y == '1')
-       
-    emp_miu = load_emp_miu(y)
-    inv_emp_sigma = load_inv_emp_covar()
-    m_mean = load_mahalanobis_mean(y)
-    m_std = load_mahalanobis_std(y)
-    coeff = load_mahalanobis_coeff(y)
-    
-    upper = m_mean + coeff*m_std
-    lower = m_mean - coeff*m_std
-
-    try:
-        m = np.transpose(x-emp_miu) @ inv_emp_sigma @ (x-emp_miu)
-    except:
-        m = (x-emp_miu) * inv_emp_sigma * (x-emp_miu)
-    
-    if lower < m and m < upper:
-        return True
-    else:
-        return False
-
-
-###
 
 def start_SID_train():
 
 
     slice_audios(path_caregiver, dest_caregiver)
     slice_audios(path_patient, dest_patient)
-    noise_directory = '..//noise_home//'
+    noise_directory = 'noise_home//'
 
     add_noise_and_deamplify_per_folder(dest_caregiver, '.wav', noise_directory)
     add_noise_and_deamplify_per_folder(dest_patient, '.wav', noise_directory)
@@ -359,22 +226,6 @@ def start_SID_train():
 
     model = train_cnn(X_train, y_train, X_test, y_test, X_val, y_val)
 
-    intermediate_layer_model = keras.Model(inputs=model.input,
-                                        outputs=model.get_layer(index=len(model.layers)-2).output)
-    intermediate_layer_model.summary()
-    intermediate_layer_model.save('..//models//intermediate_layer_model_cnn.hdf5')
-
-
-
-    emp_miu_caregiver = get_emp_miu(X_caregiver, 0, intermediate_layer_model)
-    emp_miu_patient = get_emp_miu(X_patient, 1, intermediate_layer_model)
-
-
-    emp_sigma = get_emp_sigma(emp_miu_caregiver, emp_miu_patient, X_caregiver, X_patient, intermediate_layer_model)
-
-
-    m_mean_0, m_std_0, m_coeff_0 = get_emp_mahalanobis(X_caregiver, 0, intermediate_layer_model, emp_sigma)
-    m_mean_1, m_std_1, m_coeff_1 = get_emp_mahalanobis(X_patient, 1, intermediate_layer_model, emp_sigma)
 
 if __name__ == "__main__":
     start_SID_train()
